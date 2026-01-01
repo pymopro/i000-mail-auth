@@ -92,7 +92,115 @@ function verifyI000Auth(query, clientSecret) {
 
 ```
 
+--- أمثلة بلغات **Python (Django)** و **PHP**، لتسهيل الأمر على المطورين الذين يستخدمون تقنيات مختلفة للتحقق من التوقيع الرقمي (Signature) الخاص بنظام **i000 Identity**.
+
 ---
+
+## 🐍 مثال تطبيقي باستخدام Python (Django)
+
+في بيئة **Django**، يمكنك تنفيذ التحقق داخل الـ `View` المسؤول عن استقبال رابط العودة:
+
+```python
+import hmac
+import hashlib
+import time
+from django.http import JsonResponse, HttpResponseBadRequest
+
+def verify_i000_signature(request):
+    # 1. استخراج المعايير من الرابط
+    uid = request.GET.get('uid')
+    email = request.GET.get('email', '').lower()
+    ts = request.GET.get('ts')
+    sig = request.GET.get('sig')
+    
+    client_secret = "YOUR_CLIENT_SECRET" # حفظه في settings.py أو env
+
+    if not all([uid, email, ts, sig]):
+        return HttpResponseBadRequest("بيانات ناقصة")
+
+    # 2. التحقق من صلاحية الوقت (Timestamp) - 5 دقائق كحد أقصى
+    try:
+        current_ts = int(time.time() * 1000)
+        if abs(current_ts - int(ts)) > 5 * 60 * 1000:
+            return HttpResponseBadRequest("انتهت صلاحية الرابط")
+    except ValueError:
+        return HttpResponseBadRequest("تنسيق وقت غير صالح")
+
+    # 3. إعادة بناء البيانات (Payload) بنفس الترتيب
+    payload = f"{uid}:{email}:{ts}"
+
+    # 4. إنشاء التوقيع الرقمي محلياً
+    expected_sig = hmac.new(
+        client_secret.encode('utf-8'),
+        payload.encode('utf-8'),
+        hashlib.sha256
+    ).hexdigest()
+
+    # 5. المقارنة
+    if hmac.compare_digest(expected_sig, sig):
+        # التوقيع صحيح - يمكنك تسجيل دخول المستخدم الآن
+        return JsonResponse({"status": "success", "user": email})
+    else:
+        return HttpResponseBadRequest("توقيع غير صالح - محاولة تزوير")
+
+```
+
+---
+
+## 🐘 مثال تطبيقي باستخدام PHP
+
+بالنسبة لمطوري **PHP**، العملية بسيطة جداً باستخدام الدالة المدمجة `hash_hmac`:
+
+```php
+<?php
+
+function verifyI000Auth($data, $clientSecret) {
+    $uid = $data['uid'] ?? null;
+    $email = strtolower($data['email'] ?? '');
+    $ts = $data['ts'] ?? null;
+    $sig = $data['sig'] ?? null;
+
+    if (!$uid || !$email || !$ts || !$sig) {
+        die("خطأ: بيانات ناقصة");
+    }
+
+    // 1. التحقق من الوقت (Timestamp)
+    $currentTime = time() * 1000;
+    if (abs($currentTime - (int)$ts) > 300000) { // 5 دقائق
+        die("خطأ: الرابط منتهي الصلاحية");
+    }
+
+    // 2. بناء الـ Payload
+    $payload = "$uid:$email:$ts";
+
+    // 3. حساب التوقيع الرقمي
+    $expectedSig = hash_hmac('sha256', $payload, $clientSecret);
+
+    // 4. المقارنة الآمنة
+    if (hash_equals($expectedSig, $sig)) {
+        echo "تم التحقق بنجاح! مرحباً $email";
+        // ابدأ الجلسة (Session) هنا
+    } else {
+        http_response_code(401);
+        die("خطأ: محاولة تزوير البيانات!");
+    }
+}
+
+// الاستخدام:
+// verifyI000Auth($_GET, "YOUR_CLIENT_SECRET");
+?>
+
+```
+
+---
+
+### 💡 ملاحظات تقنية هامة لجميع اللغات:
+
+* **Case Sensitivity:** دائماً قم بتحويل البريد الإلكتروني إلى **Lowercase** (حروف صغيرة) قبل إنشاء التوقيع، لأن النظام يرسله دائماً بهذا التنسيق.
+* **Safe Comparison:** في PHP استخدم `hash_equals` وفي Python استخدم `hmac.compare_digest`؛ هذه الدوال مصممة لمنع هجمات التوقيت (Timing Attacks).
+* **Redirect URI:** تأكد أن رابط العودة المسجل في لوحة التحكم يطابق تماماً الرابط الذي يستقبل هذه الأكواد.
+
+
 
 ## ⚠️ نصائح أمنية هامة للمطورين
 
