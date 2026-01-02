@@ -34,175 +34,119 @@ Pymo Pro &amp; i000 Identity Team إنشاء تقنيات تخدم الجميع 
 `uid:email:ts` باستخدام مفتاحك السري `Client Secret`.
 
 ---
+إليك النسخة المحدثة والنهائية لملف **README.md** الخاص بمشروعك على **GitHub**. تم تعديل كافة الروابط لتعتمد على الدومين المخصص الجديد **`auth.i000.org`**، مع إضافة شرح دقيق لكيفية التعامل مع التوقيع الرقمي (Signature) لضمان أقصى درجات الأمان.
 
-## 💻 مثال تطبيقي (Node.js)
+---
 
-إليك كود جاهز باستخدام مكتبة `crypto` المدمجة في Node.js للتحقق من صحة الدخول:
+# 🔐 i000 Identity: دليل دمج نظام تسجيل الدخول للمطورين
+
+نظام **i000 Identity** هو منصة هوية رقمية تتيح للمطورين التحقق من هوية المستخدمين عبر بريدهم الإلكتروني المرتبط بـ تليجرام (`@i000.org`) بطريقة آمنة وسهلة، تشبه نظام "تسجيل الدخول بواسطة جوجل".
+
+## 📍 روابط النظام الأساسية
+
+* **بوابة المصادقة:** `https://auth.i000.org/authorize`
+* **لوحة تحكم المطورين:** `https://auth.i000.org/developers`
+
+---
+
+## 🛠 آلية العمل (Authentication Flow)
+
+1. **توجيه المستخدم:** قم بتوجيه المستخدم في موقعك إلى الرابط التالي:
+```text
+https://auth.i000.org/authorize?client_id=YOUR_CLIENT_ID&redirect_uri=YOUR_REDIRECT_URI
+
+```
+
+
+2. **المصادقة:** يقوم المستخدم بتأكيد هويته (إما بضغطة واحدة داخل تليجرام، أو عبر كود OTP يصل لحسابه).
+3. **العودة بالبيانات:** بعد النجاح، يتم توجيه المستخدم لموقعك ومعطيات الدخول في الرابط:
+```text
+https://your-site.com/callback?uid=ID&email=USER@i000.org&ts=TIMESTAMP&sig=SIGNATURE
+
+```
+
+
+
+---
+
+## 🛡 التحقق من أمان البيانات (Signature Verification)
+
+لمنع تزوير البيانات، يرسل النظام توقيعاً رقمياً `sig` ناتجاً عن تشفير البيانات باستخدام **Client Secret** الخاص بك. يجب عليك إعادة حساب التوقيع في خادمك ومقارنته.
+
+### قاعدة البيانات الموقعة (Payload)
+
+يتم إنشاء التوقيع بدمج البيانات بالتنسيق التالي (مع مراعاة الحروف الصغيرة للبريد):
+`uid:email:ts`
+
+### 💻 أمثلة برمجية للتحقق
+
+#### 1. Node.js (الخيار الموصى به)
 
 ```javascript
 const crypto = require('crypto');
 
-/**
- * دالة التحقق من صحة بيانات i000
- * @param {Object} query - المعايير القادمة من الرابط (req.query)
- * @param {string} clientSecret - السر الخاص بتطبيقك المحفوظ في الخادم
- */
-function verifyI000Auth(query, clientSecret) {
+function verifySignature(query, clientSecret) {
     const { uid, email, ts, sig } = query;
-
-    // 1. فحص وجود كافة البيانات
-    if (!uid || !email || !ts || !sig) {
-        return { success: false, message: "بيانات ناقصة" };
-    }
-
-    // 2. التحقق من الطابع الزمني (اختياري ولكن مهم للأمن)
-    // منع الهجمات التي تستخدم روابط قديمة (أقدم من 5 دقائق مثلاً)
-    const now = Date.now();
-    const diff = Math.abs(now - parseInt(ts));
-    if (diff > 5 * 60 * 1000) {
-        return { success: false, message: "انتهت صلاحية الرابط (Expired)" };
-    }
-
-    // 3. إعادة بناء الـ Payload بنفس التنسيق المعتمد في i000
     const payload = `${uid}:${email.toLowerCase()}:${ts}`;
-
-    // 4. إنشاء التوقيع المحلي باستخدام مفتاحك السري
-    const localSignature = crypto
-        .createHmac('sha256', clientSecret)
-        .update(payload)
-        .digest('hex');
-
-    // 5. مقارنة التوقيع المحلي بالتوقيع المرسل
-    if (localSignature === sig) {
-        return { success: true, user: { uid, email } };
-    } else {
-        return { success: false, message: "توقيع غير صالح - محاولة تزوير!" };
-    }
+    const expectedSig = crypto.createHmac('sha256', clientSecret).update(payload).digest('hex');
+    
+    return expectedSig === sig;
 }
-
-// --- مثال على الاستخدام داخل Express.js ---
-// app.get('/auth/callback', (req, res) => {
-//    const result = verifyI000Auth(req.query, "YOUR_CLIENT_SECRET");
-//    if (result.success) {
-//        res.send(`مرحباً ${result.user.email}! تم تسجيل دخولك بنجاح.`);
-//    } else {
-//        res.status(401).send(result.message);
-//    }
-// });
 
 ```
 
---- أمثلة بلغات **Python (Django)** و **PHP**، لتسهيل الأمر على المطورين الذين يستخدمون تقنيات مختلفة للتحقق من التوقيع الرقمي (Signature) الخاص بنظام **i000 Identity**.
-
----
-
-## 🐍 مثال تطبيقي باستخدام Python (Django)
-
-في بيئة **Django**، يمكنك تنفيذ التحقق داخل الـ `View` المسؤول عن استقبال رابط العودة:
+#### 2. Python (Django/Flask)
 
 ```python
-import hmac
-import hashlib
-import time
-from django.http import JsonResponse, HttpResponseBadRequest
+import hmac, hashlib
 
-def verify_i000_signature(request):
-    # 1. استخراج المعايير من الرابط
-    uid = request.GET.get('uid')
-    email = request.GET.get('email', '').lower()
-    ts = request.GET.get('ts')
-    sig = request.GET.get('sig')
-    
-    client_secret = "YOUR_CLIENT_SECRET" # حفظه في settings.py أو env
-
-    if not all([uid, email, ts, sig]):
-        return HttpResponseBadRequest("بيانات ناقصة")
-
-    # 2. التحقق من صلاحية الوقت (Timestamp) - 5 دقائق كحد أقصى
-    try:
-        current_ts = int(time.time() * 1000)
-        if abs(current_ts - int(ts)) > 5 * 60 * 1000:
-            return HttpResponseBadRequest("انتهت صلاحية الرابط")
-    except ValueError:
-        return HttpResponseBadRequest("تنسيق وقت غير صالح")
-
-    # 3. إعادة بناء البيانات (Payload) بنفس الترتيب
-    payload = f"{uid}:{email}:{ts}"
-
-    # 4. إنشاء التوقيع الرقمي محلياً
+def verify_signature(uid, email, ts, sig, client_secret):
+    payload = f"{uid}:{email.lower()}:{ts}"
     expected_sig = hmac.new(
         client_secret.encode('utf-8'),
         payload.encode('utf-8'),
         hashlib.sha256
     ).hexdigest()
-
-    # 5. المقارنة
-    if hmac.compare_digest(expected_sig, sig):
-        # التوقيع صحيح - يمكنك تسجيل دخول المستخدم الآن
-        return JsonResponse({"status": "success", "user": email})
-    else:
-        return HttpResponseBadRequest("توقيع غير صالح - محاولة تزوير")
+    
+    return hmac.compare_digest(expected_sig, sig)
 
 ```
 
----
-
-## 🐘 مثال تطبيقي باستخدام PHP
-
-بالنسبة لمطوري **PHP**، العملية بسيطة جداً باستخدام الدالة المدمجة `hash_hmac`:
+#### 3. PHP
 
 ```php
-<?php
-
-function verifyI000Auth($data, $clientSecret) {
-    $uid = $data['uid'] ?? null;
-    $email = strtolower($data['email'] ?? '');
-    $ts = $data['ts'] ?? null;
-    $sig = $data['sig'] ?? null;
-
-    if (!$uid || !$email || !$ts || !$sig) {
-        die("خطأ: بيانات ناقصة");
-    }
-
-    // 1. التحقق من الوقت (Timestamp)
-    $currentTime = time() * 1000;
-    if (abs($currentTime - (int)$ts) > 300000) { // 5 دقائق
-        die("خطأ: الرابط منتهي الصلاحية");
-    }
-
-    // 2. بناء الـ Payload
-    $payload = "$uid:$email:$ts";
-
-    // 3. حساب التوقيع الرقمي
+function verifySignature($uid, $email, $ts, $sig, $clientSecret) {
+    $payload = "$uid:" . strtolower($email) . ":$ts";
     $expectedSig = hash_hmac('sha256', $payload, $clientSecret);
-
-    // 4. المقارنة الآمنة
-    if (hash_equals($expectedSig, $sig)) {
-        echo "تم التحقق بنجاح! مرحباً $email";
-        // ابدأ الجلسة (Session) هنا
-    } else {
-        http_response_code(401);
-        die("خطأ: محاولة تزوير البيانات!");
-    }
+    
+    return hash_equals($expectedSig, $sig);
 }
-
-// الاستخدام:
-// verifyI000Auth($_GET, "YOUR_CLIENT_SECRET");
-?>
 
 ```
 
 ---
 
-### 💡 ملاحظات تقنية هامة لجميع اللغات:
+## ⚠️ تعليمات أمنية هامة
 
-* **Case Sensitivity:** دائماً قم بتحويل البريد الإلكتروني إلى **Lowercase** (حروف صغيرة) قبل إنشاء التوقيع، لأن النظام يرسله دائماً بهذا التنسيق.
-* **Safe Comparison:** في PHP استخدم `hash_equals` وفي Python استخدم `hmac.compare_digest`؛ هذه الدوال مصممة لمنع هجمات التوقيت (Timing Attacks).
-* **Redirect URI:** تأكد أن رابط العودة المسجل في لوحة التحكم يطابق تماماً الرابط الذي يستقبل هذه الأكواد.
+* **السرية التامة:** لا تقم أبداً بتضمين `Client Secret` في كود الواجهة الأمامية (Client-side JS).
+* **فحص الوقت (Timestamp Check):** تأكد من أن قيمة `ts` قريبة من الوقت الحالي (فرق لا يتجاوز 5 دقائق) لمنع هجمات الإعادة (Replay Attacks).
+* **الدومين المخصص:** تأكد أن جميع طلباتك موجهة إلى `auth.i000.org`.
 
+---
 
+## 📞 الدعم والمساعدة
 
-## ⚠️ نصائح أمنية هامة للمطورين
+للحصول على المساعدة التقنية أو الإبلاغ عن ثغرات، يرجى التواصل عبر:
+
+* **Telegram Bot:** `@i000_org`
+* **Founder:** Mohamed Shaaban (Moshft)
+* **Founder:** you need join?
+---
+
+**i000 Identity System** - *Secure, Simple, and Integrated.*
+
+---
+
 
 1. **لا تسرب السر (Secret):** لا تضع الـ `client_secret` أبداً في كود الواجهة الأمامية (Frontend/JavaScript).
 2. **استخدم HTTPS:** تأكد من أن رابط العودة الخاص بك يستخدم بروتوكول `https` لتشفير البيانات أثناء النقل.
